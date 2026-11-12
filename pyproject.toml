@@ -1,0 +1,16 @@
+[project]
+name = "subnet-calculator-sqa"
+version = "0.1.0"
+description = "Kalkulator Subnet dan VLSM berbasis FastAPI"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]",
+]
+
+[dependency-groups]
+dev = [
+    "httpx",
+    "pytest",
+    "pytest-cov",
+]
+

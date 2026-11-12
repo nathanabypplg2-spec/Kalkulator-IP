@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Kalkulator Subnet & VLSM</title>
+    <style>
+        :root {
+            --bg: #fff;
+            --card: #f8f9fa;
+            --tx: #202124;
+            --mut: #5f6368;
+            --ac: #1a73e8;
+            --bd: #dadce0;
+            --er: #d93025;
+            --net: #1a73e8;
+            --hst: #e37400
+        }
+
+        @media(prefers-color-scheme:dark) {
+            :root {
+                --bg: #202124;
+                --card: #2d2e31;
+                --tx: #e8eaed;
+                --mut: #9aa0a6;
+                --ac: #8ab4f8;
+                --bd: #5f6368;
+                --er: #f28b82;
+                --net: #8ab4f8;
+                --hst: #fdd663
+            }
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--tx);
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 16px
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px
+        }
+
+        .tabs button {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--bd);
+            background: var(--bg);
+            color: var(--tx);
+            border-radius: 20px;
+            cursor: pointer
+        }
+
+        .tabs button.on {
+            background: var(--ac);
+            color: #fff;
+            border-color: var(--ac)
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--bd);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px
+        }
+
+        input {
+            padding: 10px;
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--tx);
+            font-size: 16px;
+            max-width: 100%;
+            box-sizing: border-box
+        }
+
+        .go {
+            background: var(--ac);
+            color: #fff;
+            border: 0;
+            border-radius: 20px;
+            padding: 10px 22px;
+            cursor: pointer;
+            font-size: 16px
+        }
+
+        .err {
+            color: var(--er);
+            margin-top: 8px
+        }
+
+        .mut {
+            color: var(--mut)
+        }
+
+        .scroll {
+            overflow-x: auto
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%
+        }
+
+        td,
+        th {
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--bd);
+            white-space: nowrap
+        }
+
+        .b {
+            font-family: monospace
+        }
+
+        .n {
+            color: var(--net)
+        }
+
+        .h {
+            color: var(--hst)
+        }
+
+        .hide {
+            display: none
+        }
+
+        .row {
+            display: flex;
+            gap: 6px;
+            margin: 6px 0
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Kalkulator Subnet & VLSM</h2>
+    <div class="tabs"><button id="t1" class="on" onclick="tab(1)">Subnet</button><button id="t2"
+            onclick="tab(2)">VLSM</button></div>
+
+    <div id="p1" class="card">
+        <input id="ip" placeholder="IP, mis. 172.16.5.130" value="172.16.5.130">
+        / <input id="pf" type="number" min="0" max="32" value="25" style="width:80px">
+        <button class="go" onclick="subnet()">Hitung</button>
+        <div id="e1" class="err"></div>
+        <div id="r1" class="scroll mut">Masukkan IP dan prefix, lalu tekan Hitung.</div>
+    </div>
+
+    <div id="p2" class="card hide">
+        <input id="nw" placeholder="Network CIDR" value="192.168.1.0/24">
+        <div id="ks"></div>
+        <button onclick="add('')">+ Tambah kebutuhan</button>
+        <button class="go" onclick="vlsm()">Alokasikan</button>
+        <div id="e2" class="err"></div>
+        <div id="r2" class="scroll mut">Isi kebutuhan host tiap subnet.</div>
+    </div>
+
+    <script>
+        const $ = i => document.getElementById(i);
+        function tab(n) { [1, 2].forEach(i => { $('p' + i).classList.toggle('hide', i != n); $('t' + i).classList.toggle('on', i == n) }) }
+        function col(b, p) { let o = '', c = 0; for (const ch of b) { if (ch == '.') { o += '.'; continue } o += `<span class="${c < p ? 'n' : 'h'}">${ch}</span>`; c++ } return o }
+        async function call(url, opt, eid) {
+            $(eid).textContent = '';
+            const r = await fetch(url, opt), d = await r.json();
+            if (!r.ok) { $(eid).textContent = d.detail || 'Terjadi kesalahan'; return null } return d
+        }
+        async function subnet() {
+            const d = await call(`/api/subnet?ip=${encodeURIComponent($('ip').value)}&prefix=${encodeURIComponent($('pf').value)}`, {}, 'e1');
+            if (!d) return; const p = d.prefix;
+            const rows = [['Address', $('ip').value, d.ip_bin], ['Netmask', `${d.mask} = ${p}`, d.mask_bin],
+            ['Wildcard', d.wildcard, ''], ['Network', `${d.network}/${p}`, d.network_bin],
+            ['Broadcast', d.broadcast ?? '— (tidak ada)', d.broadcast ? d.broadcast_bin : ''],
+            ['HostMin', d.first_host, ''], ['HostMax', d.last_host, ''], ['Hosts/Net', d.usable_hosts + ` (kelas ${d.kelas})`, '']];
+            $('r1').innerHTML = '<table>' + rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td class="b">${r[2] ? col(r[2], p) : ''}</td></tr>`).join('') + '</table>'
+        }
+        function add(v) {
+            const d = document.createElement('div'); d.className = 'row';
+            d.innerHTML = `<input type="number" min="1" value="${v}" placeholder="jumlah host"><button onclick="this.parentNode.remove()">Hapus</button>`; $('ks').appendChild(d)
+        }
+        [100, 50, 20, 2].forEach(add);
+        async function vlsm() {
+            const k = [...document.querySelectorAll('#ks input')].map(i => i.value === '' ? 0 : Number(i.value));
+            const d = await call('/api/vlsm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ network: $('nw').value, kebutuhan_host: k }) }, 'e2');
+            if (!d) return;
+            $('r2').innerHTML = '<table><tr><th>Butuh</th><th>Network</th><th>Mask</th><th>Host</th><th>Broadcast</th><th>Jumlah</th></tr>' +
+                d.map(b => `<tr><td>${b.kebutuhan}</td><td>${b.network_cidr}</td><td>${b.mask}</td><td>${b.first_host} – ${b.last_host}</td><td>${b.broadcast ?? '—'}</td><td>${b.usable_hosts}</td></tr>`).join('') + '</table>'
+        }
+    </script>
+</body>
+
+</html>
