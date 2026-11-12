@@ -33,10 +33,10 @@
         }
 
         body {
-            font-family: system-ui, sans-serif;
+            font-family: Arial, sans-serif;
             background: var(--bg);
             color: var(--tx);
-            max-width: 820px;
+            max-width: 1120px;
             margin: 0 auto;
             padding: 16px
         }
@@ -64,10 +64,10 @@
         }
 
         .card {
-            background: var(--card);
-            border: 1px solid var(--bd);
-            border-radius: 16px;
-            padding: 16px;
+            background: var(--bg);
+            border: 1px dotted #777;
+            border-radius: 0;
+            padding: 10px;
             margin-bottom: 12px
         }
 
@@ -139,6 +139,25 @@
             gap: 6px;
             margin: 6px 0
         }
+        .classic-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px }
+        .field { display:flex; flex-direction:column; gap:4px }
+        .field label { font-size:20px }
+        .classic-form input { border-radius:0; padding:3px; font-size:18px; height:28px }
+        #ip,#new-pf { width:250px }
+        #pf { width:250px }
+        .slash { font-size:22px; padding-bottom:3px }
+        .classic-button { border:1px solid #888; border-radius:3px; background:#eee; color:#111; padding:4px 12px; font-size:18px }
+        #r1 { margin-top:88px; color:var(--tx) }
+        #r1 table { width:auto }
+        #r1 td,#r1 th { border:0; padding:2px 12px 2px 0; font:18px monospace }
+        #r1 th { font-weight:normal; min-width:105px }
+        #r1 td:nth-child(2) { color:blue; min-width:220px }
+        #r1 .b { color:#888 }
+        .netbit { color:green }
+        .hostbit { color:red }
+        .prefix-note { color:#555; font:16px Arial,sans-serif }
+        .subnet-errors { color:red; font:18px monospace; white-space:pre-line; margin:24px 0 0 4px }
+        @media(max-width:700px) { .field label {font-size:16px} #ip,#pf,#new-pf {width:min(250px,75vw)} #r1 {margin-top:40px} }
     </style>
 </head>
 
@@ -148,11 +167,15 @@
             onclick="tab(2)">VLSM</button></div>
 
     <div id="p1" class="card">
-        <input id="ip" placeholder="IP, mis. 172.16.5.130" value="172.16.5.130">
-        / <input id="pf" type="number" min="0" max="32" value="25" style="width:80px">
-        <button class="go" onclick="subnet()">Hitung</button>
-        <div id="e1" class="err"></div>
-        <div id="r1" class="scroll mut">Masukkan IP dan prefix, lalu tekan Hitung.</div>
+        <form class="classic-form" onsubmit="event.preventDefault(); subnet()">
+            <div class="field"><label for="ip"><b>Address</b> (Host or Network)</label><input id="ip" value="192.168.0.1" autofocus></div>
+            <span class="slash">/</span>
+            <div class="field"><label for="pf"><b>Netmask</b> (i.e. 24)</label><input id="pf" type="number" min="0" max="32" value="24"></div>
+            <div class="field"><label for="new-pf"><b>Netmask</b> for sub/supernet (optional)</label><input id="new-pf" type="number" min="0" max="32" placeholder="move to:"></div>
+            <button class="classic-button" type="submit">Calculate</button>
+        </form>
+        <div id="e1" class="subnet-errors"></div>
+        <div id="r1" class="scroll"></div>
     </div>
 
     <div id="p2" class="card hide">
@@ -167,7 +190,7 @@
     <script>
         const $ = i => document.getElementById(i);
         function tab(n) { [1, 2].forEach(i => { $('p' + i).classList.toggle('hide', i != n); $('t' + i).classList.toggle('on', i == n) }) }
-        function col(b, p) { let o = '', c = 0; for (const ch of b) { if (ch == '.') { o += '.'; continue } o += `<span class="${c < p ? 'n' : 'h'}">${ch}</span>`; c++ } return o }
+        function col(b, p) { let o = '', c = 0; for (const ch of b) { if (ch == '.') { o += '.'; continue } o += `<span class="${c < p ? 'netbit' : 'hostbit'}">${ch}</span>`; c++ } return `<span>${o}</span>` }
         async function call(url, opt, eid) {
             $(eid).textContent = '';
             const r = await fetch(url, opt), d = await r.json();
@@ -176,11 +199,15 @@
         async function subnet() {
             const d = await call(`/api/subnet?ip=${encodeURIComponent($('ip').value)}&prefix=${encodeURIComponent($('pf').value)}`, {}, 'e1');
             if (!d) return; const p = d.prefix;
-            const rows = [['Address', $('ip').value, d.ip_bin], ['Netmask', `${d.mask} = ${p}`, d.mask_bin],
+            const rows = [['Address:', $('ip').value, d.ip_bin], ['Netmask:', `${d.mask} = ${p}`, d.mask_bin],
             ['Wildcard', d.wildcard, ''], ['Network', `${d.network}/${p}`, d.network_bin],
             ['Broadcast', d.broadcast ?? '— (tidak ada)', d.broadcast ? d.broadcast_bin : ''],
             ['HostMin', d.first_host, ''], ['HostMax', d.last_host, ''], ['Hosts/Net', d.usable_hosts + ` (kelas ${d.kelas})`, '']];
-            $('r1').innerHTML = '<table>' + rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td class="b">${r[2] ? col(r[2], p) : ''}</td></tr>`).join('') + '</table>'
+            const moveTo = $('new-pf').value;
+            if (moveTo !== '' && (!/^\d+$/.test(moveTo) || Number(moveTo) > 32)) { $('e1').textContent = 'Netmask tujuan harus berupa prefix 0–32'; return; }
+            const notes = [];
+            if (moveTo !== '') { const target = Number(moveTo); if (target > p) notes.push(`New subnet: ${2 ** (target-p)} subnets of /${target}`); else if (target < p) notes.push(`Supernet: combines ${2 ** (p-target)} networks into /${target}`); else notes.push(`Netmask tetap /${target}`); }
+            $('r1').innerHTML = '<table>' + rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td class="b">${r[2] ? col(r[2], p) : ''}</td></tr>`).join('') + '</table>' + notes.map(n => `<div class="prefix-note">${n}</div>`).join('')
         }
         function add(v) {
             const d = document.createElement('div'); d.className = 'row';
